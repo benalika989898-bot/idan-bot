@@ -6,6 +6,7 @@ from playwright.async_api import async_playwright
 from playwright_stealth import Stealth
 
 STATE_PATH = "state.json"
+GROUP_PUBLISH_TIMEOUT_SECONDS = 180
 
 
 async def random_delay(min_s=0.5, max_s=2.0):
@@ -264,6 +265,11 @@ async def publish_to_group(page, group_url, post_text, image_path, log):
         if await post_btn.count() > 0:
             await post_btn.first.click()
             log("[+] Post button clicked!")
+            try:
+                await page.wait_for_selector('div[role="dialog"]', state="hidden", timeout=45000)
+                log("[+] Post dialog closed.")
+            except Exception:
+                log("[*] Post dialog still open after clicking Post; continuing with cleanup.")
             await random_delay(3, 6)
             return True, None
     except Exception as e:
@@ -274,6 +280,44 @@ async def publish_to_group(page, group_url, post_text, image_path, log):
     reason = "Could not find Post button"
     log(f"[!] {reason}")
     return False, reason
+
+
+async def close_open_dialogs(page, log):
+    """Best-effort cleanup so a failed publish does not poison the next group."""
+    selectors = [
+        'div[role="dialog"] [aria-label="Close"]',
+        'div[role="dialog"] [aria-label="סגור"]',
+        'div[role="dialog"] [aria-label="Cancel"]',
+        'div[role="dialog"] [aria-label="ביטול"]',
+    ]
+
+    for selector in selectors:
+        try:
+            locator = page.locator(selector)
+            if await locator.count() > 0:
+                await locator.first.click()
+                await random_delay(0.5, 1.0)
+                return
+        except Exception:
+            continue
+
+    try:
+        await page.keyboard.press("Escape")
+        await random_delay(0.5, 1.0)
+    except Exception:
+        log("[!] Failed to dismiss any open publish dialog.")
+
+
+async def prepare_group_page(context, log):
+    """Open a fresh page per group so leftover UI state does not block the next publish."""
+    page = await context.new_page()
+    await Stealth().apply_stealth_async(page)
+    try:
+        await page.goto("https://www.facebook.com/", wait_until="domcontentloaded", timeout=30000)
+        await random_delay(1, 2)
+    except Exception as exc:
+        log(f"[*] Failed to warm up fresh page: {exc}")
+    return page
 
 
 async def download_image(url: str) -> str | None:
@@ -367,8 +411,7 @@ async def execute_post(
                 context = await browser.new_context(**context_kwargs)
                 needs_login = True
 
-            page = await context.new_page()
-            await Stealth().apply_stealth_async(page)
+            page = await prepare_group_page(context, log)
 
             if not needs_login:
                 log("[*] Verifying saved session...")
@@ -390,11 +433,28 @@ async def execute_post(
 
             for i, group in enumerate(groups):
                 group_url = group["url"]
+                group_page = page if i == 0 else await prepare_group_page(context, log)
                 try:
-                    success, error_reason = await publish_to_group(page, group_url, content, temp_image_path, log)
+                    success, error_reason = await asyncio.wait_for(
+                        publish_to_group(group_page, group_url, content, temp_image_path, log),
+                        timeout=GROUP_PUBLISH_TIMEOUT_SECONDS,
+                    )
                     results.append({"group_url": group_url, "success": success, "error": error_reason})
+                except asyncio.TimeoutError:
+                    timeout_reason = (
+                        f"Timed out after {GROUP_PUBLISH_TIMEOUT_SECONDS}s while publishing"
+                    )
+                    log(f"[!] {timeout_reason} to {group_url}")
+                    results.append(
+                        {"group_url": group_url, "success": False, "error": timeout_reason}
+                    )
                 except Exception as e:
                     results.append({"group_url": group_url, "success": False, "error": str(e)})
+
+                await close_open_dialogs(group_page, log)
+
+                if group_page is not page:
+                    await group_page.close()
 
                 if i < len(groups) - 1:
                     delay = random.uniform(30, 90)
@@ -402,6 +462,7 @@ async def execute_post(
                     await asyncio.sleep(delay)
 
             updated_session_state = await context.storage_state()
+            await page.close()
             await browser.close()
     finally:
         if temp_image_path and os.path.isfile(temp_image_path):
