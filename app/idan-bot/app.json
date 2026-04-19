@@ -1,0 +1,59 @@
+{
+  "expo": {
+    "name": "idan-bot",
+    "slug": "idan-bot",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "idanbot",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "com.benalonso98.idanbot",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSContactsUsageDescription": "אנו צריכים גישה לאנשי הקשר שלך כדי לייבא פרטי לקוחות בקלות",
+        "ExpoLocalization_supportsRTL": true,
+        "ExpoLocalization_forcesRTL": true
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "com.benalonso98.idanbot"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#208AEF",
+          "android": {
+            "image": "./assets/images/splash-icon.png",
+            "imageWidth": 76
+          }
+        }
+      ],
+      "@react-native-community/datetimepicker",
+      "expo-localization"
+    ],
+    "extra": {
+      "supportsRTL": true,
+      "forcesRTL": true,
+      "router": {},
+      "expo-navigation-bar": {},
+      "eas": {
+        "projectId": "076817d8-2224-4c92-9cd3-8dc604d4880c"
+      }
+    },
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}
