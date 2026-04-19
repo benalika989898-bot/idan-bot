@@ -52,6 +52,7 @@ class LoginRequest(BaseModel):
 class LoginResponse(BaseModel):
     success: bool
     session_state: dict | None = None
+    error: str | None = None
 
 
 # ── Endpoints ─────────────────────────────────────────────────

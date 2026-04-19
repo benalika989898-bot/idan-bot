@@ -75,12 +75,12 @@ async def login(page, settings, log, twofa_callback=None):
 
     # Check for 2FA prompt
     if "checkpoint" in page.url or "two_step_verification" in page.url:
-        log("[!] 2FA required. Please complete it in the browser.")
+        log("[!] 2FA required.")
         if twofa_callback:
             await asyncio.get_event_loop().run_in_executor(None, twofa_callback)
         else:
-            log("[!] Press Enter here once you have completed 2FA...")
-            await asyncio.get_event_loop().run_in_executor(None, input)
+            log("[!] Non-interactive mode cannot complete 2FA. Aborting login.")
+            return False, "2FA required"
         try:
             await page.wait_for_load_state("networkidle", timeout=15000)
         except Exception:
@@ -90,7 +90,7 @@ async def login(page, settings, log, twofa_callback=None):
     # Verify login succeeded
     if "login" in page.url or "checkpoint" in page.url:
         log("[!] Login may have failed. Check the browser.")
-        return False
+        return False, f"Login blocked on {page.url}"
 
     # Navigate to homepage to fully establish session cookies
     try:
@@ -100,7 +100,53 @@ async def login(page, settings, log, twofa_callback=None):
     await random_delay(5, 7)
 
     log("[+] Login successful!")
-    return True
+    return True, None
+
+
+async def create_facebook_session(
+    email: str,
+    password: str,
+    headless: bool,
+    log,
+    twofa_callback=None,
+) -> tuple[dict | None, str | None]:
+    """Create a Facebook browser session and return storage state."""
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=headless,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+            ],
+        )
+
+        try:
+            context = await browser.new_context(
+                viewport={"width": 1280, "height": 800},
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/120.0.0.0 Safari/537.36"
+                ),
+                locale="en-US",
+            )
+
+            page = await context.new_page()
+            await Stealth().apply_stealth_async(page)
+
+            success, login_error = await login(
+                page,
+                {"email": email, "password": password},
+                log,
+                twofa_callback=twofa_callback,
+            )
+            if not success:
+                return None, login_error or "Login failed"
+
+            session_state = await context.storage_state()
+            return session_state, None
+        finally:
+            await browser.close()
 
 
 async def publish_to_group(page, group_url, post_text, image_path, log):
@@ -327,11 +373,11 @@ async def execute_post(
 
             if needs_login:
                 settings = {"email": account_email, "password": account_password}
-                success = await login(page, settings, log)
+                success, login_error = await login(page, settings, log)
                 if not success:
                     await browser.close()
                     return {
-                        "results": [{"group_url": g["url"], "success": False, "error": "Login failed"} for g in groups],
+                        "results": [{"group_url": g["url"], "success": False, "error": login_error or "Login failed"} for g in groups],
                         "updated_session_state": None,
                     }
 
@@ -370,40 +416,17 @@ async def execute_login(email: str, password: str) -> dict:
     def log(msg):
         log_lines.append(msg)
 
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--no-sandbox",
-            ],
-        )
-
-        context = await browser.new_context(
-            viewport={"width": 1280, "height": 800},
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
-            ),
-            locale="en-US",
-        )
-
-        page = await context.new_page()
-        await Stealth().apply_stealth_async(page)
-
-        settings = {"email": email, "password": password}
-        success = await login(page, settings, log)
-
-        session_state = None
-        if success:
-            session_state = await context.storage_state()
-
-        await browser.close()
+    session_state, login_error = await create_facebook_session(
+        email=email,
+        password=password,
+        headless=True,
+        log=log,
+    )
 
     return {
-        "success": success,
+        "success": session_state is not None,
         "session_state": session_state,
+        "error": login_error,
     }
 
 
