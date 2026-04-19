@@ -150,7 +150,7 @@ async def create_facebook_session(
 
 
 async def publish_to_group(page, group_url, post_text, image_path, log):
-    """Navigate to a group and publish a post."""
+    """Navigate to a group and publish a post. Returns (success, error_reason)."""
     log(f"[*] Navigating to group: {group_url}")
     try:
         await page.goto(group_url, wait_until="domcontentloaded", timeout=30000)
@@ -160,8 +160,9 @@ async def publish_to_group(page, group_url, post_text, image_path, log):
         except Exception:
             pass
     except Exception as e:
-        log(f"[!] Navigation timeout/error: {e}")
-        return False
+        reason = f"Navigation timeout/error: {e}"
+        log(f"[!] {reason}")
+        return False, reason
     log(f"[*] Current URL: {page.url}")
     await random_delay(2, 4)
 
@@ -198,8 +199,9 @@ async def publish_to_group(page, group_url, post_text, image_path, log):
             await page.click('div[contenteditable="true"]')
             compose_clicked = True
         except Exception:
-            log("[!] Failed to open compose box.")
-            return False
+            reason = "Failed to open compose box"
+            log(f"[!] {reason}")
+            return False, reason
 
     await random_delay(2, 4)
 
@@ -207,8 +209,9 @@ async def publish_to_group(page, group_url, post_text, image_path, log):
     try:
         await page.wait_for_selector('div[role="dialog"] div[contenteditable="true"]', timeout=10000)
     except Exception:
-        log("[!] Compose dialog did not appear.")
-        return False
+        reason = "Compose dialog did not appear"
+        log(f"[!] {reason}")
+        return False, reason
 
     # Type the post content in the editor
     try:
@@ -224,8 +227,9 @@ async def publish_to_group(page, group_url, post_text, image_path, log):
 
         log("[+] Post text entered.")
     except Exception as e:
-        log(f"[!] Failed to type post text: {e}")
-        return False
+        reason = f"Failed to type post text: {e}"
+        log(f"[!] {reason}")
+        return False, reason
 
     await random_delay(1, 2)
 
@@ -261,12 +265,15 @@ async def publish_to_group(page, group_url, post_text, image_path, log):
             await post_btn.first.click()
             log("[+] Post button clicked!")
             await random_delay(3, 6)
-            return True
+            return True, None
     except Exception as e:
-        log(f"[!] Error clicking Post: {e}")
+        reason = f"Error clicking Post: {e}"
+        log(f"[!] {reason}")
+        return False, reason
 
-    log("[!] Could not find Post button.")
-    return False
+    reason = "Could not find Post button"
+    log(f"[!] {reason}")
+    return False, reason
 
 
 async def download_image(url: str) -> str | None:
@@ -384,8 +391,8 @@ async def execute_post(
             for i, group in enumerate(groups):
                 group_url = group["url"]
                 try:
-                    success = await publish_to_group(page, group_url, content, temp_image_path, log)
-                    results.append({"group_url": group_url, "success": success, "error": None if success else "Publish failed"})
+                    success, error_reason = await publish_to_group(page, group_url, content, temp_image_path, log)
+                    results.append({"group_url": group_url, "success": success, "error": error_reason})
                 except Exception as e:
                     results.append({"group_url": group_url, "success": False, "error": str(e)})
 
@@ -506,7 +513,7 @@ async def main(settings=None, log=None, stop_event=None, twofa_callback=None):
                 break
 
             log(f"\n--- Group {i + 1}/{len(group_urls)} ---")
-            success = await publish_to_group(
+            success, _error = await publish_to_group(
                 page, group_url, settings["post_text"], settings["image_path"], log
             )
             results.append((group_url, success))
