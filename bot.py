@@ -153,15 +153,37 @@ async def create_facebook_session(
 async def publish_to_group(page, group_url, post_text, image_path, log):
     """Navigate to a group and publish a post. Returns (success, error_reason)."""
     log(f"[*] Navigating to group: {group_url}")
-    try:
-        await page.goto(group_url, wait_until="domcontentloaded", timeout=30000)
-        await random_delay(2, 3)
+    navigation_error = None
+    for attempt, wait_until in enumerate(("domcontentloaded", "load"), start=1):
         try:
-            await page.wait_for_load_state("networkidle", timeout=10000)
-        except Exception:
-            pass
-    except Exception as e:
-        reason = f"Navigation timeout/error: {e}"
+            timeout_ms = 30000 if attempt == 1 else 45000
+            await page.goto(group_url, wait_until=wait_until, timeout=timeout_ms)
+            await random_delay(2, 3)
+            try:
+                await page.wait_for_load_state("networkidle", timeout=10000)
+            except Exception:
+                pass
+            navigation_error = None
+            break
+        except Exception as e:
+            navigation_error = e
+            log(
+                f"[!] Navigation attempt {attempt} failed for {group_url}: {e}"
+            )
+            if attempt == 1:
+                try:
+                    await page.goto(
+                        "https://www.facebook.com/",
+                        wait_until="domcontentloaded",
+                        timeout=30000,
+                    )
+                    await random_delay(1, 2)
+                except Exception:
+                    pass
+                log("[*] Retrying group navigation with a longer timeout...")
+
+    if navigation_error is not None:
+        reason = f"Navigation timeout/error: {navigation_error}"
         log(f"[!] {reason}")
         return False, reason
     log(f"[*] Current URL: {page.url}")
