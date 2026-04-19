@@ -367,6 +367,7 @@ async def execute_post(
 
     def log(msg):
         log_lines.append(msg)
+        print(msg, flush=True)
 
     # Download image if URL provided
     temp_image_path = None
@@ -461,7 +462,12 @@ async def execute_post(
                     log(f"[*] Waiting {delay:.0f}s before next group...")
                     await asyncio.sleep(delay)
 
-            updated_session_state = await context.storage_state()
+            try:
+                updated_session_state = await context.storage_state()
+            except Exception as exc:
+                log(f"[!] Failed to persist session state: {exc}")
+                updated_session_state = None
+
             await page.close()
             await browser.close()
     finally:
@@ -483,6 +489,7 @@ async def execute_login(email: str, password: str) -> dict:
 
     def log(msg):
         log_lines.append(msg)
+        print(msg, flush=True)
 
     session_state, login_error = await create_facebook_session(
         email=email,
