@@ -283,70 +283,76 @@ async def execute_post(
     results = []
     updated_session_state = None
 
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--no-sandbox",
-            ],
-        )
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=True,
+                args=[
+                    "--disable-blink-features=AutomationControlled",
+                    "--no-sandbox",
+                ],
+            )
 
-        context = await browser.new_context(
-            storage_state=session_state if session_state else None,
-            viewport={"width": 1280, "height": 800},
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
-            ),
-            locale="en-US",
-        )
+            context_kwargs = {
+                "viewport": {"width": 1280, "height": 800},
+                "user_agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/120.0.0.0 Safari/537.36"
+                ),
+                "locale": "en-US",
+            }
 
-        page = await context.new_page()
-        await Stealth().apply_stealth_async(page)
-
-        # Login or verify session
-        needs_login = session_state is None
-        if not needs_login:
-            log("[*] Verifying saved session...")
-            await page.goto("https://www.facebook.com/", wait_until="domcontentloaded")
-            await random_delay(2, 4)
-            if "login" in page.url:
-                log("[!] Session expired, re-logging in...")
+            needs_login = session_state is None
+            try:
+                context = await browser.new_context(
+                    storage_state=session_state if session_state else None,
+                    **context_kwargs,
+                )
+            except Exception as exc:
+                log(f"[!] Failed to load saved session state: {exc}")
+                context = await browser.new_context(**context_kwargs)
                 needs_login = True
 
-        if needs_login:
-            settings = {"email": account_email, "password": account_password}
-            success = await login(page, settings, log)
-            if not success:
-                await browser.close()
-                return {
-                    "results": [{"group_url": g["url"], "success": False, "error": "Login failed"} for g in groups],
-                    "updated_session_state": None,
-                }
+            page = await context.new_page()
+            await Stealth().apply_stealth_async(page)
 
-        # Post to each group
-        for i, group in enumerate(groups):
-            group_url = group["url"]
-            try:
-                success = await publish_to_group(page, group_url, content, temp_image_path, log)
-                results.append({"group_url": group_url, "success": success, "error": None if success else "Publish failed"})
-            except Exception as e:
-                results.append({"group_url": group_url, "success": False, "error": str(e)})
+            if not needs_login:
+                log("[*] Verifying saved session...")
+                await page.goto("https://www.facebook.com/", wait_until="domcontentloaded")
+                await random_delay(2, 4)
+                if "login" in page.url:
+                    log("[!] Session expired, re-logging in...")
+                    needs_login = True
 
-            if i < len(groups) - 1:
-                delay = random.uniform(30, 90)
-                log(f"[*] Waiting {delay:.0f}s before next group...")
-                await asyncio.sleep(delay)
+            if needs_login:
+                settings = {"email": account_email, "password": account_password}
+                success = await login(page, settings, log)
+                if not success:
+                    await browser.close()
+                    return {
+                        "results": [{"group_url": g["url"], "success": False, "error": "Login failed"} for g in groups],
+                        "updated_session_state": None,
+                    }
 
-        # Save updated session state
-        updated_session_state = await context.storage_state()
-        await browser.close()
+            for i, group in enumerate(groups):
+                group_url = group["url"]
+                try:
+                    success = await publish_to_group(page, group_url, content, temp_image_path, log)
+                    results.append({"group_url": group_url, "success": success, "error": None if success else "Publish failed"})
+                except Exception as e:
+                    results.append({"group_url": group_url, "success": False, "error": str(e)})
 
-    # Clean up temp image
-    if temp_image_path and os.path.isfile(temp_image_path):
-        os.unlink(temp_image_path)
+                if i < len(groups) - 1:
+                    delay = random.uniform(30, 90)
+                    log(f"[*] Waiting {delay:.0f}s before next group...")
+                    await asyncio.sleep(delay)
+
+            updated_session_state = await context.storage_state()
+            await browser.close()
+    finally:
+        if temp_image_path and os.path.isfile(temp_image_path):
+            os.unlink(temp_image_path)
 
     return {
         "results": results,

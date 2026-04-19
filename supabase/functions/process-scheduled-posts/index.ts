@@ -4,6 +4,8 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const BOT_SERVER_URL = Deno.env.get("BOT_SERVER_URL")!; // e.g. "http://your-vps:8000"
 const BOT_SERVER_SECRET = Deno.env.get("BOT_SERVER_SECRET") || "";
+const FUNCTION_SECRET =
+  Deno.env.get("FUNCTION_SECRET") || SUPABASE_SERVICE_ROLE_KEY;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
@@ -23,10 +25,25 @@ interface BotResponse {
   updated_session_state?: Record<string, unknown>;
 }
 
+function isAuthorizedRequest(req: Request) {
+  const authorization = req.headers.get("Authorization");
+  const apikey = req.headers.get("apikey");
+  const validSecrets = [
+    Deno.env.get("FUNCTION_SECRET"),
+    SUPABASE_SERVICE_ROLE_KEY,
+  ].filter((value): value is string => Boolean(value));
+
+  return validSecrets.some(
+    (secret) =>
+      authorization === `Bearer ${secret}` ||
+      authorization === secret ||
+      apikey === secret,
+  );
+}
+
 Deno.serve(async (req) => {
-  // Verify this is called with the service role key
-  const authHeader = req.headers.get("Authorization");
-  if (authHeader !== `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`) {
+  // Allow either the dedicated function secret or the service role key.
+  if (FUNCTION_SECRET && !isAuthorizedRequest(req)) {
     return new Response("Unauthorized", { status: 401 });
   }
 

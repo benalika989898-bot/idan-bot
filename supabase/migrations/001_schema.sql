@@ -111,6 +111,6 @@ CREATE POLICY "Users read own images"
 --   '* * * * *',
 --   $$SELECT net.http_post(
 --     url := 'https://<project>.supabase.co/functions/v1/process-scheduled-posts',
---     headers := '{"Authorization": "Bearer <service_role_key>"}'::jsonb
+--     headers := '{"Authorization": "Bearer <function_secret>"}'::jsonb
 --   )$$
 -- );

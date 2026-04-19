@@ -1,0 +1,17 @@
+[Unit]
+Description=Idan Bot API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=benalonso98
+WorkingDirectory=/home/benalonso98/idan-bot
+EnvironmentFile=/etc/idan-bot.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/benalonso98/idan-bot/venv/bin/uvicorn server:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

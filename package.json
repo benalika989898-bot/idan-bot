@@ -1,0 +1,12 @@
+{
+  "dependencies": {
+    "nativewind": "^4.2.3",
+    "react-native-reanimated": "^4.3.0",
+    "react-native-safe-area-context": "^5.7.0"
+  },
+  "devDependencies": {
+    "babel-preset-expo": "^55.0.17",
+    "prettier-plugin-tailwindcss": "^0.5.11",
+    "tailwindcss": "^3.4.17"
+  }
+}
