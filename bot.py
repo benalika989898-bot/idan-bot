@@ -204,34 +204,54 @@ async def publish_to_group(page, group_url, post_text, image_path, log):
         'div[role="button"]:has-text("Write something")',
     ]
 
-    compose_clicked = False
-    for selector in compose_selectors:
-        try:
-            locator = page.locator(selector)
-            if await locator.count() > 0:
-                await locator.first.click()
-                compose_clicked = True
-                log("[+] Compose box opened.")
-                break
-        except Exception:
-            continue
+    compose_ready = False
+    for attempt in range(1, 3):
+        compose_clicked = False
+        for selector in compose_selectors:
+            try:
+                locator = page.locator(selector)
+                if await locator.count() > 0:
+                    await locator.first.click()
+                    compose_clicked = True
+                    log(f"[+] Compose trigger clicked (attempt {attempt}).")
+                    break
+            except Exception:
+                continue
 
-    if not compose_clicked:
-        log("[!] Could not find compose box. Trying fallback...")
-        try:
-            await page.click('div[contenteditable="true"]')
-            compose_clicked = True
-        except Exception:
+        if not compose_clicked:
+            log("[!] Could not find compose box. Trying fallback...")
+            try:
+                await page.click('div[contenteditable="true"]')
+                compose_clicked = True
+                log(f"[+] Fallback compose trigger clicked (attempt {attempt}).")
+            except Exception:
+                pass
+
+        if not compose_clicked:
+            if attempt < 2:
+                await random_delay(1, 2)
+                continue
             reason = "Failed to open compose box"
             log(f"[!] {reason}")
             return False, reason
 
-    await random_delay(2, 4)
+        await random_delay(2, 4)
 
-    # Wait for the compose dialog to appear
-    try:
-        await page.wait_for_selector('div[role="dialog"] div[contenteditable="true"]', timeout=10000)
-    except Exception:
+        try:
+            await page.wait_for_selector(
+                'div[role="dialog"] div[contenteditable="true"]',
+                timeout=10000,
+            )
+            compose_ready = True
+            log("[+] Compose dialog opened.")
+            break
+        except Exception:
+            log(f"[!] Compose dialog did not appear on attempt {attempt}.")
+            await close_open_dialogs(page, log)
+            if attempt < 2:
+                await random_delay(1, 2)
+
+    if not compose_ready:
         reason = "Compose dialog did not appear"
         log(f"[!] {reason}")
         return False, reason
